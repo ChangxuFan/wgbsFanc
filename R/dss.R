@@ -61,3 +61,21 @@ dmr.list.write <- function(dmr.list, items = NULL,
     })
   })
 }
+
+dmr.pct.in.peaks <- function(dmr, peaks.gr) {
+  dmr <- makeGRangesFromDataFrame(dmr)
+  o <- findOverlaps(dmr, peaks.gr, ignore.strand = T)
+  n <- queryHits(o) %>% unique() %>% length()
+  return(n/length(dmr))
+}
+
+dmr.bed.import <- function(dmr.bed) {
+  dmrs <- read.table(dmr.bed)
+  header <- c("chr", "start", "end", "length", "nCG", "meanMethy1", "meanMethy2", "diff.Methy", "areaStat")
+  colnames(dmrs) <- header
+  return(dmrs)
+}
+
+dmr.pileup.assess <- function(dmr.file, methyl.bws, out.dir = NULL, root.name) {
+  stop("unfinished")
+}

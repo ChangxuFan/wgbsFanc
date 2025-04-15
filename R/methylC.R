@@ -1,6 +1,6 @@
 methylC.import <- function(methylC, threads = 4, region = NULL) {
   if (is.null(names(methylC))) {
-    names(methylC) <- basename(methylC) %>% sub("\\.CG.methylC.*$", "", .)
+    names(methylC) <- basename(methylC) %>% sub("(\\.CG)*.methylC.*$", "", .)
   }
   grs <- utilsFanc::safelapply(methylC, function(me) {
     gr <- rtracklayer::import.bed(me, which = region)
@@ -131,25 +131,63 @@ smooth.by.shift <- function(vec, win) {
   return(vec.out)
 }
 
-mc.pca <- function(mc.o, ntop = 1000000, samples = NULL) {
+mc.pca <- function(mc.o, bin.size = NULL, bin.use.genome,
+                   ntop = 1000000, depth.cutoff = 5, depth.cap = 30,
+                   samples = NULL,
+                   rm.sex.chr = T,
+                   suffix = NULL) {
   if (is.null(samples))
     samples <- mc.o$samples
   
-  df <- mc.o$mc.df %>% .[, paste0("CG_", samples)]
+  df <- mc.o$mc.df 
+  
+  if (!is.null(bin.size)) {
+    browser()
+  }
+  
+  df <- df %>% dplyr::filter(depth_min >= depth.cutoff, depth_max <= depth.cap)
+  
+  if (rm.sex.chr) df <- df %>% dplyr::filter(!grepl("chrX|chrY", locus))
+  
+  df <- df %>% .[, c("locus", paste0("CG_", samples))]
+
+  
+  if (nrow(df) == 0) {
+    stop("nrow(df) == 0")
+  }
+  
+  df$locus <- NULL
   rv <- rowVars(df %>% as.matrix())
   select <- order(rv, decreasing = TRUE)[seq_len(min(ntop, length(rv)))]
+  n.total <- length(select)
   pca <- prcomp(t(df[select, ]))
   percentVar <- pca$sdev^2/sum(pca$sdev^2)
   
-  d <- data.frame(PC1 = pca$x[, 1], PC2 = pca$x[, 2], sample = rownames(pca$x))
-
-  p <- ggplot(data = d, aes_string(x = "PC1", y = "PC2", color = "sample", label = "sample")) + 
-    geom_point(size = 3) + xlab(paste0("PC1: ", round(percentVar[1] * 100), "% variance")) + 
-    ylab(paste0("PC2: ", round(percentVar[2] * 100), "% variance")) + coord_fixed() +
-    ggrepel::geom_text_repel()
-  trash <- scFanc::wrap.plots.fanc(plot.list = list(p), sub.width = 8, sub.height = 8,
-                          plot.out = paste0(mc.o$work.dir, "/", mc.o$root.name, "_pca.png"))
-  return(p)
+  pc.combinations <- list(
+    c(1, 2),
+    c(1, 3),
+    c(1, 4),
+    c(1, 5)
+  )
+  pl <- lapply(pc.combinations, function(pc.combo) {
+    if (max(pc.combo) > ncol(pca$x)) return()
+    d <- data.frame(PC1 = pca$x[, pc.combo[1]], PC2 = pca$x[, pc.combo[2]], sample = rownames(pca$x))
+    pc.x <- paste0("PC", pc.combo[1])
+    pc.y <- paste0("PC", pc.combo[2])
+    colnames(d) <- c(pc.x, pc.y, "sample")
+    
+    p <- ggplot(data = d, aes_string(x = pc.x, y = pc.y, color = "sample", label = "sample")) + 
+      geom_point(size = 3) + xlab(paste0(pc.x, ": ", round(percentVar[pc.combo[1]] * 100), "% variance")) + 
+      ylab(paste0(pc.y, ": ", round(percentVar[pc.combo[2]] * 100), "% variance")) + coord_fixed() +
+      ggrepel::geom_text_repel() +
+      ggtitle(paste0("n = ", n.total, "; depth ", depth.cutoff))
+  })
+  
+  trash <- scFanc::wrap.plots.fanc(plot.list = pl, sub.width = 8, sub.height = 8,
+                          plot.out = paste0(mc.o$work.dir, "/", mc.o$root.name, "_pca_depth", depth.cutoff,
+                                            ifelse(rm.sex.chr, "_rmSex_", "_" ),
+                                            "ntop", utilsFanc::so.formatter(ntop), ".png"))
+  invisible(pl)
 }
 
 mc.cor <- function(mc.o) {
@@ -170,3 +208,4 @@ CG.density <- function(gr, genome) {
   browser()
   print("miao")
 }
+
